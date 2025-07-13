@@ -16,7 +16,7 @@ speechrecognition==3.10.0
 pvporcupine==3.0.3
 pyaudio==0.2.14           # 0.2.14 has pre-built arm64 wheel
 pyttsx3==2.90             # optional local TTS
-webrtcvad-wheels==2.0.10.post1 # Voice activity detection
+webrtcvad-wheels==2.0.14 # Voice activity detection
 
 # ───────── Security ─────────
 cryptography>=45.0.5,<46

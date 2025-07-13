@@ -21,7 +21,7 @@ class Automation:
         try:
             pyperclip.copy(txt)
             time.sleep(0.1)
-            from AppKit import NSAppleScript
+            from AppKit import NSAppleScript  # type: ignore[reportMissingImports]
 
             script = NSAppleScript.alloc().initWithSource_(
                 'tell application "System Events" to keystroke "v" using {command down}'

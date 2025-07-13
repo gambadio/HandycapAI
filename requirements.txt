@@ -1,0 +1,27 @@
+# UI / Core
+PySide6==6.7.1
+qasync==0.26.0
+
+# AI
+openai>=1.68.0           # ≥1.39.0 needed for Realtime API
+faster-whisper==1.0.7
+torch==2.2.2
+numpy==1.26.4
+
+# Audio / Speech
+speechrecognition==3.10.0
+pvporcupine==3.0.3
+pyaudio==0.2.13
+pyttsx3==2.90
+
+# Security / Crypto
+cryptography==42.0.5
+
+# Utilities
+Pillow==10.2.0
+pyperclip==1.8.2
+psutil==5.9.9
+
+# macOS-specific (automatically pulls other pyobjc libs)
+pyobjc-framework-Quartz==10.0
+py2app==0.28.6

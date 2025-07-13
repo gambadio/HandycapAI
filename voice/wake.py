@@ -1,14 +1,21 @@
 """
-Porcupine wake-word wrapper.
+Porcupine wake-word wrapper with custom keyword-file support.
+
+Settings expectation:
+    porcupine_api_key  →  "<AccessKey>"                         (built-in keyword “porcupine”)
+                           "<AccessKey>|wake_words/hello.ppn"   (custom .ppn path)
+
+If Settings → wake_word_enabled is false this class does nothing.
 """
+from __future__ import annotations
+
 import logging
 import threading
 import struct
-
+import os
 from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
-
 
 class PorcupineWake(QObject):
     keyword_triggered = Signal()
@@ -25,20 +32,35 @@ class PorcupineWake(QObject):
         if settings.get("wake_word_enabled", False):
             self._init()
 
-    # ─────────────────────
+    # ──────────────────────────────────────────
     def _init(self):
         try:
             import pvporcupine
             import pyaudio
 
-            access_key = self.settings.get("porcupine_api_key", "")
-            if not access_key:
-                self.error_occurred.emit("Picovoice API key missing")
+            token = self.settings.get("porcupine_api_key", "")
+            if not token:
+                self.error_occurred.emit("Picovoice AccessKey missing")
                 return
 
-            # Use built-in keyword "porcupine" if custom not supplied
-            self.ppn = pvporcupine.create(access_key=access_key, keywords=["porcupine"])
+            # Parse AccessKey | keyword-file
+            if "|" in token:
+                access_key, kw_path = token.split("|", 1)
+                kw_path = kw_path.strip()
+                if not os.path.exists(kw_path):
+                    self.error_occurred.emit(f"Keyword file not found: {kw_path}")
+                    return
+                self.ppn = pvporcupine.create(
+                    access_key=access_key.strip(),
+                    keyword_paths=[kw_path],
+                )
+                logger.info("Loaded custom keyword file %s", kw_path)
+            else:
+                # Fall back to built-in keyword “porcupine”
+                self.ppn = pvporcupine.create(access_key=token, keywords=["porcupine"])
+                logger.info("Using built-in keyword 'porcupine'")
 
+            # Open microphone
             self.pa = pyaudio.PyAudio()
             self.stream = self.pa.open(
                 rate=self.ppn.sample_rate,
@@ -53,12 +75,12 @@ class PorcupineWake(QObject):
             logger.info("Porcupine wake-word active")
 
         except ImportError:
-            logger.warning("Porcupine deps not installed")
+            logger.warning("Porcupine or PyAudio not installed")
         except Exception as exc:
             logger.exception("Wake-word init failed")
             self.error_occurred.emit(str(exc))
 
-    # ─────────────────────
+    # ──────────────────────────────────────────
     def _loop(self):
         try:
             while self._running:
@@ -71,6 +93,7 @@ class PorcupineWake(QObject):
             logger.exception("Wake-word loop error")
             self.error_occurred.emit(str(exc))
 
+    # ──────────────────────────────────────────
     def stop(self):
         self._running = False
         try:

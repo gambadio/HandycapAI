@@ -1,263 +1,203 @@
 """
-Settings dialog + encrypted persistence +
-Custom-functions table with JSON-schema editor.
+Settings dialog with encrypted persistence + toggle between
+basic / advanced realtime + TTS controls.
 """
+from __future__ import annotations
 
-import os
 import json
 import logging
+import os
+from typing import Dict, List
 
+from cryptography.fernet import Fernet  # type: ignore
+from PySide6.QtCore import Qt, QSettings, QStandardPaths
 from PySide6.QtWidgets import (
-    QWidget,
-    QFormLayout,
-    QCheckBox,
     QButtonGroup,
-    QRadioButton,
-    QSlider,
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QGroupBox,
+    QHeaderView,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
+    QRadioButton,
+    QSlider,
     QTableWidget,
     QTableWidgetItem,
-    QMessageBox,
-    QVBoxLayout,
-    QHBoxLayout,
     QTextEdit,
-    QHeaderView,
-    QDialog,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QSettings, QStandardPaths
-from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────
-# Low-level settings helper (unchanged)
+# ───────────────────────────────────────────
 class SettingsManager:
-    """Wrapper around QSettings with transparent encryption for secrets."""
+    """QSettings wrapper with encrypted OpenAI key."""
 
     def __init__(self):
-        self.qsettings = QSettings("com.handycapai.app", "HandycapAI")
+        self.qs = QSettings("com.handycapai.app", "HandycapAI")
         cfg_dir = QStandardPaths.writableLocation(QStandardPaths.AppConfigLocation)
         os.makedirs(cfg_dir, exist_ok=True)
         key_path = os.path.join(cfg_dir, "settings.key")
         if not os.path.exists(key_path):
-            with open(key_path, "wb") as f:
-                f.write(Fernet.generate_key())
-            logger.info("Generated new Fernet key")
-        with open(key_path, "rb") as f:
-            self.fernet = Fernet(f.read())
+            with open(key_path, "wb") as fh:
+                fh.write(Fernet.generate_key())
+        self.fernet = Fernet(open(key_path, "rb").read())
 
+    # ----------
     def get(self, key: str, default=None):
         if key == "openai_api_key":
-            enc = self.qsettings.value(key, "")
+            enc = self.qs.value(key, "")
             if not enc:
                 return ""
             try:
                 return self.fernet.decrypt(enc.encode()).decode()
-            except Exception:
-                logger.warning("OpenAI key decrypt failed – resetting")
-                self.qsettings.setValue(key, "")
+            except Exception:  # noqa: BLE001
+                logger.warning("API key decrypt failed")
+                self.qs.setValue(key, "")
                 return ""
-        return self.qsettings.value(key, default)
+        return self.qs.value(key, default)
 
     def set(self, key: str, value):
-        try:
-            if key == "openai_api_key":
-                enc = self.fernet.encrypt(value.strip().encode()).decode() if value else ""
-                self.qsettings.setValue(key, enc)
-            else:
-                self.qsettings.setValue(key, value)
-            self.qsettings.sync()
-        except Exception as exc:
-            logger.error("Settings save failed: %s", exc)
-            raise
+        if key == "openai_api_key":
+            enc = self.fernet.encrypt(value.strip().encode()).decode() if value else ""
+            self.qs.setValue(key, enc)
+        else:
+            self.qs.setValue(key, value)
+        self.qs.sync()
 
-# ──────────────────────────────────────────────────────────
-# JSON-schema editor dialog
-class FunctionParameterDialog(QDialog):
-    def __init__(self, parent=None, initial: str = "{}"):
-        super().__init__(parent)
-        self.setWindowTitle("Edit Function Parameters (JSON Schema)")
-        self.setMinimumSize(500, 400)
-
-        v = QVBoxLayout(self)
-        self.editor = QTextEdit()
-        self.editor.setPlainText(initial or "{}")
-        v.addWidget(self.editor)
-
-        btn_bar = QHBoxLayout()
-        ok_btn = QPushButton("OK")
-        cancel_btn = QPushButton("Cancel")
-        ok_btn.clicked.connect(self.accept)
-        cancel_btn.clicked.connect(self.reject)
-        btn_bar.addStretch(1)
-        btn_bar.addWidget(cancel_btn)
-        btn_bar.addWidget(ok_btn)
-        v.addLayout(btn_bar)
-
-    @property
-    def value(self) -> str:
-        return self.editor.toPlainText()
-
-# ──────────────────────────────────────────────────────────
-# Main settings window
+# ───────────────────────────────────────────
 class SettingsWindow(QWidget):
     def __init__(self, settings: SettingsManager):
         super().__init__()
         self.setWindowTitle("HandycapAI Settings")
-        self.setMinimumSize(820, 640)
+        self.setMinimumSize(860, 700)
         self.settings = settings
 
-        layout = QFormLayout(self)
+        lay = QVBoxLayout(self)
 
-        # Wake-word
-        wake_cb = QCheckBox('Enable wake-word ("Hello Freya")')
-        wake_cb.setChecked(settings.get("wake_word_enabled", False))
-        wake_cb.stateChanged.connect(lambda s: settings.set("wake_word_enabled", bool(s)))
-        layout.addRow(wake_cb)
+        # ─── API section ───
+        api_group = QGroupBox("API")
+        api_form = QFormLayout(api_group)
 
-        # Picovoice key
-        self.porcupine_edit = QLineEdit(settings.get("porcupine_api_key", ""))
-        self.porcupine_edit.setEchoMode(QLineEdit.Password)
-        layout.addRow("Picovoice API key:", self.porcupine_edit)
+        # Mode
+        self.mode_grp = QButtonGroup(self)
+        rb_stream = QRadioButton("Chat-Completions (stream)")
+        rb_rt = QRadioButton("Realtime API")
+        self.mode_grp.addButton(rb_stream, 0)
+        self.mode_grp.addButton(rb_rt, 1)
+        (rb_rt if settings.get("api_mode", "stream") == "realtime" else rb_stream).setChecked(True)
+        api_form.addRow(rb_stream)
+        api_form.addRow(rb_rt)
 
-        # Hot-keys
-        self.start_edit = QLineEdit(settings.get("hotkey_start", "Shift+Meta+Space"))
-        self.end_edit = QLineEdit(settings.get("hotkey_stop", "Esc"))
-        layout.addRow("Start hot-key:", self.start_edit)
-        layout.addRow("Stop  hot-key:", self.end_edit)
-
-        # API mode
-        api_grp = QButtonGroup(self)
-        stream_rb = QRadioButton("Chat-Completions (text)")
-        realtime_rb = QRadioButton("Realtime Voice")
-        api_grp.addButton(stream_rb)
-        api_grp.addButton(realtime_rb)
-        (realtime_rb if settings.get("api_mode", "stream") == "realtime" else stream_rb).setChecked(
-            True
-        )
-        layout.addRow(stream_rb)
-        layout.addRow(realtime_rb)
-
-        # STT source
-        stt_grp = QButtonGroup(self)
-        local_rb = QRadioButton("Local Whisper")
-        cloud_rb = QRadioButton("Cloud whisper-1")
-        stt_grp.addButton(local_rb)
-        stt_grp.addButton(cloud_rb)
-        (cloud_rb if settings.get("stt_source", "local") == "cloud" else local_rb).setChecked(True)
-        layout.addRow(local_rb)
-        layout.addRow(cloud_rb)
-
-        # Context slider
-        self.ctx_slider = QSlider(Qt.Horizontal)
-        self.ctx_slider.setRange(5, 50)
-        self.ctx_slider.setValue(int(settings.get("max_context_length", 10)))
-        ctx_lbl = QLabel(str(self.ctx_slider.value()))
-        self.ctx_slider.valueChanged.connect(lambda v: ctx_lbl.setText(str(v)))
-        layout.addRow("Max context messages:", self.ctx_slider)
-        layout.addRow("", ctx_lbl)
+        # Basic vs advanced
+        self.cb_basic = QCheckBox("Use basic realtime implementation (text-only)")
+        self.cb_basic.setChecked(settings.get("realtime_basic_mode", True))
+        self.cb_basic.setEnabled(rb_rt.isChecked())
+        rb_rt.toggled.connect(self.cb_basic.setEnabled)
+        api_form.addRow(self.cb_basic)
 
         # OpenAI key
-        self.openai_edit = QLineEdit(settings.get("openai_api_key", ""))
-        self.openai_edit.setEchoMode(QLineEdit.Password)
-        layout.addRow("OpenAI API key:", self.openai_edit)
+        self.key_edit = QLineEdit(settings.get("openai_api_key", ""))
+        self.key_edit.setEchoMode(QLineEdit.Password)
+        api_form.addRow("OpenAI API key:", self.key_edit)
 
-        # Custom functions table
-        self.func_tbl = QTableWidget(0, 4)
-        self.func_tbl.setHorizontalHeaderLabels(
-            ["Name", "Description", "Action (Python)", "Parameters"]
-        )
-        self.func_tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.func_tbl.cellDoubleClicked.connect(self._edit_param_schema)
-        layout.addRow("Custom Functions:", self.func_tbl)
-        self._load_functions()
+        lay.addWidget(api_group)
 
-        # Buttons
+        # ─── TTS ───
+        tts_group = QGroupBox("Voice output (TTS)")
+        tts_form = QFormLayout(tts_group)
+        self.cb_tts = QCheckBox("Enable TTS")
+        self.cb_tts.setChecked(settings.get("tts_enabled", False))
+        tts_form.addRow(self.cb_tts)
+
+        self.voice_combo = QComboBox()
+        self.voice_combo.addItems(["alloy", "echo", "fable", "onyx", "nova", "shimmer"])
+        self.voice_combo.setCurrentText(settings.get("tts_voice", "alloy"))
+        tts_form.addRow("Voice model:", self.voice_combo)
+
+        self.vol_slider = QSlider(Qt.Horizontal)
+        self.vol_slider.setRange(1, 100)
+        self.vol_slider.setValue(int(float(settings.get("tts_volume", 1.0)) * 100))
+        tts_form.addRow("Volume:", self.vol_slider)
+
+        lay.addWidget(tts_group)
+
+        # ─── Custom functions ───
+        func_group = QGroupBox("Custom functions")
+        func_lay = QVBoxLayout(func_group)
+
+        self.tbl = QTableWidget(0, 4)
+        self.tbl.setHorizontalHeaderLabels(["Name", "Description", "Action (Python)", "Parameters"])
+        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        func_lay.addWidget(self.tbl)
+
         btns = QHBoxLayout()
         add_btn = QPushButton("Add")
         rm_btn = QPushButton("Remove")
-        save_btn = QPushButton("Save Settings")
-        add_btn.clicked.connect(self._add_func_row)
-        rm_btn.clicked.connect(self._rm_func_row)
-        save_btn.clicked.connect(self._save)
+        add_btn.clicked.connect(self._add_row)
+        rm_btn.clicked.connect(lambda: self.tbl.removeRow(self.tbl.currentRow()))
         btns.addWidget(add_btn)
         btns.addWidget(rm_btn)
-        btns.addStretch(1)
-        btns.addWidget(save_btn)
-        layout.addRow(btns)
+        btns.addStretch()
+        func_lay.addLayout(btns)
 
-    # ─────────────────────
-    # Function-table helpers
-    def _load_functions(self):
-        self.func_tbl.setRowCount(0)
+        lay.addWidget(func_group)
+        lay.addStretch()
+
+        # Save
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self._save)
+        lay.addWidget(save_btn, alignment=Qt.AlignRight)
+
+        self._load_funcs()
+
+    # ───────────────────────────────────────────
+    def _load_funcs(self):
+        self.tbl.setRowCount(0)
         try:
             funcs = json.loads(self.settings.get("functions_json", "[]"))
-        except Exception:
+        except Exception:  # noqa: BLE001
             funcs = []
         for f in funcs:
-            r = self.func_tbl.rowCount()
-            self.func_tbl.insertRow(r)
-            self.func_tbl.setItem(r, 0, QTableWidgetItem(f.get("name", "")))
-            self.func_tbl.setItem(r, 1, QTableWidgetItem(f.get("description", "")))
-            self.func_tbl.setItem(r, 2, QTableWidgetItem(f.get("action", "")))
-            self.func_tbl.setItem(
-                r, 3, QTableWidgetItem(json.dumps(f.get("parameters", {}), indent=2))
-            )
+            r = self.tbl.rowCount()
+            self.tbl.insertRow(r)
+            self.tbl.setItem(r, 0, QTableWidgetItem(f.get("name", "")))
+            self.tbl.setItem(r, 1, QTableWidgetItem(f.get("description", "")))
+            self.tbl.setItem(r, 2, QTableWidgetItem(f.get("action", "")))
+            self.tbl.setItem(r, 3, QTableWidgetItem(json.dumps(f.get("parameters", {}), indent=2)))
 
-    def _add_func_row(self):
-        r = self.func_tbl.rowCount()
-        self.func_tbl.insertRow(r)
-        default_params = {"type": "object", "properties": {}, "required": []}
-        self.func_tbl.setItem(r, 3, QTableWidgetItem(json.dumps(default_params, indent=2)))
+    def _add_row(self):
+        r = self.tbl.rowCount()
+        self.tbl.insertRow(r)
+        self.tbl.setItem(r, 3, QTableWidgetItem('{"type":"object","properties":{}}'))
 
-    def _rm_func_row(self):
-        r = self.func_tbl.currentRow()
-        if r >= 0:
-            self.func_tbl.removeRow(r)
-
-    def _edit_param_schema(self, row: int, col: int):
-        if col != 3:
-            return
-        item = self.func_tbl.item(row, col)
-        dlg = FunctionParameterDialog(self, initial=item.text() if item else "{}")
-        if dlg.exec():
-            self.func_tbl.setItem(row, col, QTableWidgetItem(dlg.value))
-
-    # ─────────────────────
+    # ───────────────────────────────────────────
     def _save(self):
         try:
-            self.settings.set("porcupine_api_key", self.porcupine_edit.text())
-            self.settings.set("hotkey_start", self.start_edit.text())
-            self.settings.set("hotkey_stop", self.end_edit.text())
-            self.settings.set(
-                "api_mode",
-                "realtime"
-                if any(rb.isChecked() and rb.text().startswith("Realtime") for rb in self.findChildren(QRadioButton))
-                else "stream",
-            )
-            self.settings.set(
-                "stt_source",
-                "cloud"
-                if any(rb.isChecked() and rb.text().startswith("Cloud") for rb in self.findChildren(QRadioButton))
-                else "local",
-            )
-            self.settings.set("max_context_length", self.ctx_slider.value())
-            self.settings.set("openai_api_key", self.openai_edit.text())
+            self.settings.set("api_mode", "realtime" if self.mode_grp.checkedId() == 1 else "stream")
+            self.settings.set("realtime_basic_mode", self.cb_basic.isChecked())
+            self.settings.set("openai_api_key", self.key_edit.text())
+            self.settings.set("tts_enabled", self.cb_tts.isChecked())
+            self.settings.set("tts_voice", self.voice_combo.currentText())
+            self.settings.set("tts_volume", self.vol_slider.value() / 100.0)
 
-            funcs = []
-            for r in range(self.func_tbl.rowCount()):
-                name = self.func_tbl.item(r, 0)
-                desc = self.func_tbl.item(r, 1)
-                action = self.func_tbl.item(r, 2)
-                params = self.func_tbl.item(r, 3)
+            funcs: List[Dict] = []
+            for r in range(self.tbl.rowCount()):
+                name = self.tbl.item(r, 0)
+                action = self.tbl.item(r, 2)
                 if not name or not action:
                     continue
+                desc = self.tbl.item(r, 1)
+                params = self.tbl.item(r, 3)
                 try:
                     params_obj = json.loads(params.text() if params else "{}")
                 except json.JSONDecodeError:
-                    params_obj = {"type": "object", "properties": {}, "required": []}
+                    params_obj = {}
                 funcs.append(
                     {
                         "name": name.text(),
@@ -267,7 +207,7 @@ class SettingsWindow(QWidget):
                     }
                 )
             self.settings.set("functions_json", json.dumps(funcs))
-            QMessageBox.information(self, "Settings", "Settings saved ✔")
-        except Exception as exc:
+            QMessageBox.information(self, "Settings", "Saved ✔")
+        except Exception as exc:  # noqa: BLE001
             logger.exception("Settings save failed")
-            QMessageBox.critical(self, "Error", f"Failed to save:\n{exc}")
+            QMessageBox.critical(self, "Failure", str(exc))

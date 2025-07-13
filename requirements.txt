@@ -9,7 +9,7 @@ tiktoken>=0.9,<1.0        # fast token counting
 # ───────── Speech / Whisper ─────────
 faster-whisper==1.1.1
 torch==2.2.2              # Apple-Silicon:  --index-url https://download.pytorch.org/whl
-numpy>=2.3,<3.0
++ numpy>=1.26,<2.0
 
 speechrecognition==3.10.0
 pvporcupine==3.0.3

@@ -1,41 +1,49 @@
 #!/usr/bin/env python3
 """
-HandycapAI – Application entry-point.
-Uses qasync to bind Qt’s event loop to asyncio so that
-all `asyncio.create_task` calls (voice, LLM, …) run correctly.
-"""
+HandycapAI — application entry-point.
 
-import sys
-import signal
+• Binds Qt’s event-loop to asyncio via qasync.
+• Selects the correct transports (Chat-Completions, Realtime-basic,
+  Realtime-advanced) via TransportFactory according to settings.
+• Registers the VoiceManager, TTS, system-tray and quick settings bar.
+"""
+from __future__ import annotations
+
 import asyncio
 import logging
+import signal
+import sys
+from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 from qasync import QEventLoop
 
-from ui.tray import TrayManager
+from llm.transport_factory import TransportFactory
 from settings_ui import SettingsManager
+from ui.tray import TrayManager
 from voice.state import VoiceManager
-from llm.chat import ChatCompletionsTransport
-from llm.realtime import RealtimeTransport
+from voice.tts import TTSManager
 
-# ──────────────────────────
-# Logging
+# ──────────────────────────────  logging  ──────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(name)s | %(message)s",
 )
 logger = logging.getLogger("main")
 
-# Handle ⌃C gracefully
+# Allow ⌃C
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 def start_app() -> None:
-    """Initialise Qt -> asyncio bridge and launch the UI."""
-    # Qt application
+    """Qt + asyncio bootstrap."""
+    # High-DPI / Retina
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     app = QApplication(sys.argv)
 
-    # Bind asyncio to the Qt event loop
+    # Bind the asyncio loop
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
 
@@ -43,33 +51,33 @@ def start_app() -> None:
         try:
             settings = SettingsManager()
 
-            # Check OpenAI key – warn only
-            if not settings.get("openai_api_key", ""):
-                QMessageBox.warning(
-                    None,
-                    "API Key Required",
-                    "Please set your OpenAI API key in Settings before using the application.",
-                )
+            # Transports (factory auto-selects correct realtime impl.)
+            chat_transport = TransportFactory.create_chat_transport(settings)
+            realtime_transport = TransportFactory.create_realtime_transport(settings)
 
-            # Transports
-            chat_transport = ChatCompletionsTransport(settings)
-            realtime_transport = RealtimeTransport(settings)
+            # Voice (wake-word + STT) and TTS
+            voice_mgr = VoiceManager(settings)
+            tts_mgr = TTSManager(settings)
 
-            # Voice & Tray
-            voice = VoiceManager(settings)
-            TrayManager(app, settings, voice, chat_transport, realtime_transport)
+            # System-tray root
+            TrayManager(
+                app,
+                settings,
+                voice_mgr,
+                tts_mgr,
+                chat_transport,
+                realtime_transport,
+            )
 
             logger.info("HandycapAI started successfully")
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.exception("Startup failed")
             QMessageBox.critical(None, "Startup Error", f"Failed to start HandycapAI:\n{exc}")
             app.quit()
 
-    # Run bootstrap as soon as event loop starts
     loop.create_task(bootstrap())
 
-    # Start Qt + asyncio loop
     with loop:
         loop.run_forever()
 

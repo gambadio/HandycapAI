@@ -1,27 +1,29 @@
-# UI / Core
-PySide6==6.7.1
+# ───────── UI / event-loop ─────────
+PySide6==6.7.1            # Qt 6.7, universal2 wheels
 qasync==0.26.0
 
-# AI
-openai>=1.68.0           # ≥1.39.0 needed for Realtime API
-faster-whisper==1.0.7
-torch==2.2.2
-numpy==1.26.4
+# ───────── OpenAI SDK & helpers ─────────
+openai>=1.95,<2.0         # realtime API present
+tiktoken>=0.9,<1.0        # fast token counting
 
-# Audio / Speech
+# ───────── Speech / Whisper ─────────
+faster-whisper==1.1.1
+torch==2.2.2              # Apple-Silicon:  --index-url https://download.pytorch.org/whl
+numpy>=2.3,<3.0
+
 speechrecognition==3.10.0
 pvporcupine==3.0.3
-pyaudio==0.2.13
-pyttsx3==2.90
+pyaudio==0.2.14           # 0.2.14 has pre-built arm64 wheel
+pyttsx3==2.90             # optional local TTS
 
-# Security / Crypto
-cryptography==42.0.5
+# ───────── Security ─────────
+cryptography>=45.0.5,<46
 
-# Utilities
-Pillow==10.2.0
+# ───────── Utilities ─────────
+Pillow>=11.3,<12
 pyperclip==1.8.2
-psutil==5.9.9
+psutil==5.9.8             # newest on PyPI (Mar 2025)
 
-# macOS-specific (automatically pulls other pyobjc libs)
-pyobjc-framework-Quartz==10.0
+# ───────── macOS-specific ─────────
+pyobjc-framework-Quartz>=10.2
 py2app==0.28.6

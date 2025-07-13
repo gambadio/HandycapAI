@@ -5,16 +5,18 @@ qasync==0.26.0
 # ───────── OpenAI SDK & helpers ─────────
 openai>=1.95,<2.0         # realtime API present
 tiktoken>=0.9,<1.0        # fast token counting
+httpx>=0.25.0,<1.0         # required by openai
 
 # ───────── Speech / Whisper ─────────
 faster-whisper==1.1.1
 torch==2.2.2              # Apple-Silicon:  --index-url https://download.pytorch.org/whl
-+ numpy>=1.26,<2.0
+numpy>=1.26,<2.0
 
 speechrecognition==3.10.0
 pvporcupine==3.0.3
 pyaudio==0.2.14           # 0.2.14 has pre-built arm64 wheel
 pyttsx3==2.90             # optional local TTS
+webrtcvad-wheels==2.0.10.post1 # Voice activity detection
 
 # ───────── Security ─────────
 cryptography>=45.0.5,<46

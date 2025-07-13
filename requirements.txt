@@ -1,31 +1,33 @@
 # ───────── UI / event-loop ─────────
-PySide6==6.7.1            # Qt 6.7, universal2 wheels
-qasync==0.26.0
+PySide6==6.7.1             # latest that ships cp311 wheels
+qasync==0.27.0
 
 # ───────── OpenAI SDK & helpers ─────────
-openai>=1.95,<2.0         # realtime API present
-tiktoken>=0.9,<1.0        # fast token counting
-httpx>=0.25.0,<1.0         # required by openai
+openai==1.95.1             # 2025-06-27 tag, realtime + audio fixes
+tiktoken==0.9.2
+httpx==0.28.0
 
 # ───────── Speech / Whisper ─────────
-faster-whisper==1.1.1
-torch==2.2.2              # Apple-Silicon:  --index-url https://download.pytorch.org/whl
-numpy>=1.26,<2.0
-
-speechrecognition==3.10.0
-pvporcupine==3.0.3
-pyaudio==0.2.14           # 0.2.14 has pre-built arm64 wheel
-pyttsx3==2.90             # optional local TTS
-webrtcvad-wheels==2.0.14 # Voice activity detection
+faster-whisper==1.1.3
+torch==2.2.2               # Apple-Silicon: add  --index-url  https://download.pytorch.org/whl
+numpy==1.26.4
+speechrecognition==3.11.0
+pvporcupine==3.0.5
+pyaudio==0.2.14
+pyttsx3==2.91
+webrtcvad-wheels==2.0.14
 
 # ───────── Security ─────────
-cryptography>=45.0.5,<46
+cryptography==42.0.5
 
 # ───────── Utilities ─────────
-Pillow>=11.3,<12
-pyperclip==1.8.2
-psutil==5.9.8             # newest on PyPI (Mar 2025)
+Pillow==11.3.1
+pyperclip==1.8.3
+psutil==5.9.9
 
 # ───────── macOS-specific ─────────
-pyobjc-framework-Quartz>=10.2
+pyobjc-framework-Quartz==10.2
 py2app==0.28.6
+
+# ───────── Test / Dev ─────────
+pytest==8.1.1

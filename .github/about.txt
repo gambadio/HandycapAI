@@ -1,0 +1,1 @@
+HandycapAI is a macOS voice-first assistant designed for hands-free productivity and accessibility. It leverages Whisper and GPT-4o for speech recognition and chat completions, offers secure local storage, custom Python tool integration, and full voice control—all running locally on your Mac.
